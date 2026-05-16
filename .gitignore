@@ -1,0 +1,21 @@
+
+# Airflow sensitive files
+
+.env
+
+*.pyc
+
+__pycache__/
+
+logs/
+
+plugins/
+
+# secrets
+
+*.key
+
+*.pem
+
+*.token
+
