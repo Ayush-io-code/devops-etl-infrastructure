@@ -1,0 +1,14 @@
+---
+- name: Gather and display system information
+  hosts: local
+  tasks:
+
+    - name: Print OS details
+      debug:
+        msg:
+          - "OS: {{ ansible_distribution }} {{ ansible_distribution_version }}"
+          - "Kernel: {{ ansible_kernel }}"
+          - "CPU cores: {{ ansible_processor_vcpus }}"
+          - "RAM: {{ ansible_memtotal_mb }} MB"
+          - "Hostname: {{ ansible_hostname }}"
+          - "Python: {{ ansible_python_version }}"

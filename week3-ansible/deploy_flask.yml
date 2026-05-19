@@ -1,0 +1,85 @@
+---
+- name: Deploy Flask ETL status app
+  hosts: local
+  become: yes
+  vars:
+    app_dir: /opt/flask-app
+    app_port: 5000
+
+  tasks:
+
+    - name: Create app directory
+      file:
+        path: "{{ app_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Copy app.py
+      copy:
+        content: |
+          from flask import Flask
+          app = Flask(__name__)
+
+          @app.route('/')
+          def home():
+              return 'ETL Pipeline Status: OK'
+
+          @app.route('/health')
+          def health():
+              return {'status': 'healthy', 'service': 'etl-pipeline'}
+
+          if __name__ == '__main__':
+              app.run(host='0.0.0.0', port=5000)
+        dest: "{{ app_dir }}/app.py"
+
+    - name: Copy requirements.txt
+      copy:
+        content: "flask\n"
+        dest: "{{ app_dir }}/requirements.txt"
+
+    - name: Copy Dockerfile
+      copy:
+        content: |
+          FROM python:3.11-slim
+          WORKDIR /app
+          COPY requirements.txt .
+          RUN pip install -r requirements.txt
+          COPY app.py .
+          CMD ["python", "app.py"]
+        dest: "{{ app_dir }}/Dockerfile"
+
+    - name: Build Docker image
+      command: docker build -t flask-etl-app .
+      args:
+        chdir: "{{ app_dir }}"
+
+    - name: Stop existing container if running
+      command: docker stop flask-app
+      ignore_errors: yes
+
+    - name: Remove existing container if present
+      command: docker rm flask-app
+      ignore_errors: yes
+
+    - name: Run Flask container
+      command: >
+        docker run -d
+        -p {{ app_port }}:5000
+        --name flask-app
+        flask-etl-app
+
+    - name: Wait for app to start
+      wait_for:
+        port: "{{ app_port }}"
+        delay: 2
+        timeout: 30
+
+    - name: Verify app is responding
+      uri:
+        url: "http://localhost:{{ app_port }}"
+        return_content: yes
+      register: response
+
+    - name: Print response
+      debug:
+        msg: "App response: {{ response.content }}"

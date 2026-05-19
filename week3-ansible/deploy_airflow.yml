@@ -1,0 +1,12 @@
+---
+- name: Deploy Airflow ETL stack
+  hosts: local
+  become: no
+  vars:
+    airflow_dir: /workspaces/devops-etl-infrastructure/week2-airflow
+
+  tasks:
+    - name: Start Airflow stack
+      command: docker-compose up -d airflow-apiserver airflow-scheduler postgres
+      args:
+        chdir: "{{ airflow_dir }}"
