@@ -67,7 +67,7 @@ tools, making my operational experience defensible in DevOps and SRE interviews.
 | 1 | Docker | Flask ETL status app, optimised Dockerfile with layer caching | Done |
 | 2 | Apache Airflow | ETL DAG (extract->transform->load), Weather ETL DAG, Docker Compose stack | Done |
 | 3 | Ansible | System facts, Docker provisioning, Flask + Airflow deployment playbooks | Done |
-| 4 | Prometheus + Grafana | Monitoring stack, PromQL dashboards, alerting | Week 4 |
+| 4 | Prometheus + Grafana | Monitoring stack, Node Exporter, PromQL dashboards (CPU, memory, disk), live metrics | Done |
 | 5 | GitHub Actions | CI/CD pipeline — build, test, Docker health check on every push | Week 5 |
 | 6 | Portfolio | Full docs, architecture diagrams, interview prep | Week 6 |
 
@@ -102,9 +102,9 @@ devops-etl-infrastructure/
 │   ├── deploy_flask.yml                # Build and run Flask container
 │   └── deploy_airflow.yml              # Deploy full Airflow stack
 │
-├── week4-monitoring/                   # Coming Week 4
-│   ├── prometheus.yml
-│   └── docker-compose.yml
+├── week4-monitoring/
+│   ├── docker-compose.yml              # Prometheus + Grafana + Node Exporter stack
+│   └── prometheus.yml                  # Scrape config — targets and intervals
 │
 └── .github/
     └── workflows/
@@ -170,6 +170,41 @@ ansible-playbook -i inventory.ini deploy_airflow.yml
 ansible-playbook -i inventory.ini deploy_flask.yml
 ```
 
+### Week 4 — Prometheus + Grafana Monitoring
+```bash
+cd week4-monitoring
+mkdir -p grafana-data
+chmod 777 grafana-data
+docker compose up -d
+docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+```
+
+Access the UIs:
+- **Prometheus:** `http://localhost:9090` — verify targets at Status → Targets
+- **Grafana:** `http://localhost:3000` — login: `admin` / `admin`
+
+**Set up Grafana dashboard:**
+1. Add Prometheus data source: Connections → Data sources → Add → Prometheus → URL: `http://prometheus:9090` → Save & Test
+2. Import Node Exporter dashboard: Dashboards → New → Import → ID `1860` → Load → select Prometheus → Import
+3. Or create custom dashboard with these PromQL queries:
+
+```promql
+# CPU Usage %
+100 - (avg by(instance)(rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)
+
+# Memory Usage %
+(1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100
+
+# Disk Usage %
+(1 - node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100
+
+# Network In (MB/s)
+rate(node_network_receive_bytes_total{device="eth0"}[5m]) / 1024 / 1024
+
+# Network Out (MB/s)
+rate(node_network_transmit_bytes_total{device="eth0"}[5m]) / 1024 / 1024
+```
+
 ---
 
 ## Key Concepts Demonstrated
@@ -192,10 +227,14 @@ ansible-playbook -i inventory.ini deploy_flask.yml
 - `ok` vs `changed` in PLAY RECAP — the key indicator of whether state was modified
 - `ignore_errors: yes` for expected failures — stop-remove-redeploy container pattern
 
-### Prometheus + Grafana (Week 4)
-- Pull model — Prometheus scrapes targets every 15s
+### Prometheus + Grafana
+- Pull model — Prometheus scrapes targets every 15s; targets register themselves, Prometheus fetches metrics
 - Counter vs Gauge — use `rate()` on counters (cpu_seconds), never on gauges (memory_free)
-- Node Exporter exposes Linux system metrics as HTTP endpoints
+- Node Exporter exposes 800+ Linux system metrics as HTTP endpoints on port 9100
+- PromQL functions — `rate()` for per-second rates, `avg by()` for aggregation, `1 -` for inversion
+- Grafana data sources — Prometheus connected via internal Docker network name (`http://prometheus:9090`), not localhost
+- Dashboard panels — each panel is one PromQL query; unit formatting (percent, MB/s) makes metrics human-readable
+- Why this matters in production — same stack used at Netflix, Uber, and most cloud-native companies for infrastructure observability
 
 ### GitHub Actions (Week 5)
 - Runners — fresh Ubuntu VMs per pipeline run, destroyed after
@@ -212,9 +251,13 @@ Problems hit during this lab and what they taught me:
 
 **Airflow 3.x breaking change (Week 2):** `schedule_interval` renamed to `schedule`. DAG silently disappears from UI on import error — no loud failure. Fixed with `sed`. Taught me why DAG import error alerting matters in production.
 
+**CeleryExecutor on 4GB RAM (Week 2):** Airflow defaulted to CeleryExecutor which requires Redis + worker containers. Tasks stuck in queue indefinitely. Switched to LocalExecutor — scheduler runs tasks directly, no worker needed. Right tool for the environment.
+
 **Heredoc failures (Week 2-3):** Bash interpreted Python's `t1 >> t2 >> t3` as shell redirects when heredoc didn't close properly, creating empty files named `t2` and `t3`. Same symbol, completely different meaning in Python vs bash.
 
 **Package managers (Week 1 vs Codespaces):** `yum` on CentOS, `apt` on Ubuntu. Exactly why Docker and Ansible exist — abstract away OS differences.
+
+**Grafana container crash (Week 4):** Grafana exited with code 2 and empty logs — permissions issue on data directory. Fixed by mounting a `grafana-data` directory with `chmod 777` and setting `user: "0"` in docker-compose. Taught me that empty logs usually means the process crashed before logging initialised — check filesystem permissions first.
 
 ---
 
@@ -222,6 +265,7 @@ Problems hit during this lab and what they taught me:
 
 | Tag | Description |
 |-----|-------------|
+| `v0.4-week4` | Week 4: Prometheus + Grafana monitoring stack with Node Exporter and PromQL dashboards |
 | `v0.3-week3` | Week 3: Ansible playbooks for Docker and Airflow provisioning |
 | `v0.2-week2` | Week 2: Airflow 3.x ETL stack with ETL and Weather DAGs |
 | `v0.1-week1` | Week 1: Docker foundations — Flask app containerised |
