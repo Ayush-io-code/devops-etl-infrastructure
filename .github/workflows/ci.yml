@@ -1,0 +1,35 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r week1-docker/flask-app/requirements.txt
+
+      - name: Run basic test
+        run: |
+          python -c "from week1-docker.flask-app.app import app; print('App import OK')"
+
+      - name: Build Docker image
+        run: docker build -t devops-lab-app week1-docker/flask-app/
+
+      - name: Test container starts
+        run: |
+          docker run -d -p 5000:5000 --name test-app devops-lab-app
+          sleep 3
+          curl -f http://localhost:5000
+          docker stop test-app
